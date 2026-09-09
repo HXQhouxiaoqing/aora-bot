@@ -191,3 +191,57 @@ window.MoodMates.characters.register({
     }
   }
 });
+
+/*
+ * Scholar 使用参数化身体只做“隐藏驱动骨架”，原 SVG 才是可见外观。
+ * Mood Mates 默认 renderer 会给身体自动叠径向体积渐变、底部 AO 和地面阴影；
+ * 对 Scholar 来说这些层会透过白脸形成一块灰黑色椭圆，因此在这里针对 Scholar
+ * 包一层 renderer：保留驱动身体的几何数据和动画，但把它的可见 chrome 隐掉。
+ */
+(function installScholarFlatRenderer() {
+  var MM = window.MoodMates;
+  if (!MM || !MM.createBall || MM.__scholarFlatRendererInstalled) return;
+
+  var createBallBase = MM.createBall;
+
+  function hideDriverChrome(ball) {
+    if (!ball || !ball.svg) return;
+
+    var bodyG = ball.svg.querySelector('.mm-body');
+    if (bodyG) {
+      Array.prototype.forEach.call(bodyG.children, function (node) {
+        if (!node || node.tagName.toLowerCase() !== 'path') return;
+        var fill = node.getAttribute('fill') || '';
+        /* renderer 自动生成的主体渐变和 AO；原 SVG path 都是纯色，不会误伤。 */
+        if (/url\(#mm\d+g\)/.test(fill) || /url\(#mm\d+ao\)/.test(fill)) {
+          node.style.display = 'none';
+        }
+      });
+    }
+
+    /* renderer 的地面软阴影同样不属于原 IP。 */
+    Array.prototype.forEach.call(ball.svg.querySelectorAll('ellipse'), function (node) {
+      var fill = node.getAttribute('fill') || '';
+      if (/url\(#mm\d+sh\)/.test(fill)) node.style.display = 'none';
+    });
+  }
+
+  MM.createBall = function (container, opts) {
+    var ball = createBallBase(container, opts);
+    var ch = opts && opts.character;
+    if (!ch || ch.id !== 'scholar') return ball;
+
+    hideDriverChrome(ball);
+
+    /* 线稿开关 / 每帧 applyPose 可能重新改 AO 显示状态，所以每帧末尾再压掉一次。 */
+    var applyPoseBase = ball.applyPose;
+    ball.applyPose = function (pose) {
+      applyPoseBase(pose);
+      hideDriverChrome(ball);
+    };
+
+    return ball;
+  };
+
+  MM.__scholarFlatRendererInstalled = true;
+})();
